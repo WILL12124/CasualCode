@@ -8,7 +8,6 @@
 #include <stdlib.h>
 
 #define N 26
-bool isWin = 0;
 
 void setBoard(char board[][N], int n, char player, int row, int col);
 void boardInit(char board[][N], int n);
@@ -19,6 +18,7 @@ char *availableMove(char board[][N], int n, char player);
 bool isValid(char board[][N], int n, int row, int col, char player);
 void placeDot(char board[][N], int n, int row, int col, char player);
 void killTheGame(char board[][N], int n, char botPlay);
+int checkScore(char board[][N], int n, int nr, int nc, char botPlayer);
 
 int main(void)
 {
@@ -31,40 +31,105 @@ int main(void)
 
     char board[N][N]; // 注意！！！macro在这一行之后才能看到
     boardInit(board, n);
-    printBoard(board, n);
 
     char botPlay = '\0', userPlay = '\0';
     printf("Computer plays (B/W): ");
     do
     {
-        scanf(" %c", botPlay);
-    } while (botPlay != 'B' || botPlay != 'W');
+        scanf(" %c", &botPlay);
+    } while (botPlay != 'B' && botPlay != 'W');
+
+    printBoard(board, n);
 
     if (botPlay == 'B')
     {
-        printBoard(board, n);
         killTheGame(board, n, botPlay);
+        printBoard(board, n);
     }
 
     userPlay = (botPlay == 'B') ? 'W' : 'B';
     char userRow, userCol;
-    while (!isWin)
+    while (1)
     {
-        printBoard(board, n);
-        printf("Enter move for colour %c (RowCol): ", userPlay);
-        scanf(" %c%c", &userRow, &userCol);
-        if (isValid(board, n, userRow - 'a', userCol - 'a', userPlay))
+        // Chekc win
+        char *botMoves = availableMove(board, n, botPlay);
+        char *userMoves = availableMove(board, n, userPlay);
+
+        if (botMoves[0] == '\0' && userMoves[0] == '\0')
         {
-            placeDot(board, n, userRow, userCol, userPlay);
+            free(botMoves);
+            free(userMoves); ////MEMORY LEAK!
+            break;
+        }
+
+        if (userMoves[0] != '\0')
+        {
+            printf("Enter move for colour %c (RowCol): ", userPlay);
+            scanf(" %c%c", &userRow, &userCol);
+            if (isValid(board, n, userRow - 'a', userCol - 'a', userPlay))
+            {
+                placeDot(board, n, userRow - 'a', userCol - 'a', userPlay);
+                printBoard(board, n);
+            }
+            else
+            {
+                printf("Invalid move.\n%c player wins.\n", botPlay);
+                free(botMoves);
+                free(userMoves);
+                return 0;
+            }
         }
         else
         {
-            printf("Invalid move.\n%c player wins.\n", botPlay);
-            return 0;
+            printf("%c player has no valid move.\n", userPlay);
         }
-        killTheGame(board, n, botPlay);
-    }
 
+        free(botMoves);
+        botMoves = availableMove(board, n, botPlay); // recalculate
+
+        free(userMoves);
+        userMoves = availableMove(board, n, userPlay);
+
+        if (botMoves[0] == '\0' && userMoves[0] == '\0') // change due to new place
+        {
+            free(botMoves);
+            free(userMoves);
+            break;
+        }
+        if (botMoves[0] != '\0')
+        {
+            killTheGame(board, n, botPlay);
+            printBoard(board, n);
+        }
+        else
+        {
+            printf("%c player has no valid move.\n", botPlay);
+        }
+
+        free(botMoves);
+        free(userMoves);
+    }
+    int bCount = 0, wCount = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+        {
+            if (board[i][j] == 'B')
+                bCount++;
+            else if (board[i][j] == 'W')
+                wCount++;
+        }
+    if (bCount > wCount)
+    {
+        printf("B player wins.\n");
+    }
+    else if (wCount > bCount)
+    {
+        printf("W player wins.\n");
+    }
+    else
+    {
+        printf("Draw!\n");
+    }
     return 0;
 }
 
@@ -74,11 +139,6 @@ int main(void)
 
 
 */
-void setBoard(char board[][N], int n, char player, int row, int col) // 这里的vla是指描述，不分配内存
-{
-    board[row][col] = player;
-}
-
 bool positionInBounds(int n, int row, int col)
 {
     return (row >= 0 && row < n && col >= 0 && col < n);
@@ -132,32 +192,6 @@ void boardInit(char board[][N], int n)
     board[mid - 1][mid] = 'B';
     board[mid][mid - 1] = 'B';
     board[mid][mid] = 'W';
-
-    printBoard(board, n);
-
-    // setBoard
-    char player, tempRow, tempCol;
-    printf("Enter board configuration:\n");
-    for (int i = 0; i < n * n; i++) // 如果觉得需要记array信息的，不妨直接输入一次做一次
-    {
-        scanf(" %c%c%c", &player, &tempRow, &tempCol);
-        if (player == '!')
-        {
-            return; // void 用return就可以了
-        }
-        if (player != 'B' && player != 'W')
-        {
-            printf("Invalid\n");
-            continue;
-        }
-        if (!positionInBounds(n, tempRow - 'a', tempCol - 'a'))
-        {
-            printf("Invalid\n");
-            continue;
-        }
-
-        setBoard(board, n, player, tempRow - 'a', tempCol - 'a');
-    }
 }
 
 void printBoard(char board[][N], int n)
@@ -206,7 +240,7 @@ bool isValid(char board[][N], int n, int row, int col, char player)
 {
     int deltaRows[] = {0, 1, 1, 1, 0, -1, -1, -1}; // star from 0 rad, counterclockwise
     int deltaCols[] = {1, 1, 0, -1, -1, -1, 0, 1};
-    if (board[row][col] != 'U')
+    if ((board[row][col] != 'U') || (!positionInBounds(n, row, col)))
     {
         return false;
     }
@@ -252,8 +286,105 @@ void placeDot(char board[][N], int n, int row, int col, char player)
     }
 }
 
-void killTheGame(char board[][n], int n, char botPlay)
+void killTheGame(char board[][N], int n, char botPlayer)
 {
-    //
-    printf("Computer places %c at bc.\n", botPlay);
+    int deltaRows[] = {0, 1, 1, 1, 0, -1, -1, -1}; // star from 0 rad, counterclockwise
+    int deltaCols[] = {1, 1, 0, -1, -1, -1, 0, 1};
+    char otherPlayer = (botPlayer == 'B') ? 'W' : 'B';
+    int score = 0, best[2] = {-1, -1};
+
+    for (int row = 0; row < n; row++)
+    {
+        for (int col = 0; col < n; col++)
+        {
+            int tempScore = 0;
+            if (board[row][col] != 'U')
+            {
+                continue;
+            }
+            for (int i = 0; i < 8; i++) // gos all 8 directions
+            {
+                int tempScoreDirection = 0;
+                for (int num = 1; num <= n; num++) // extend in one direction
+                {
+                    int nr = row + num * deltaRows[i];
+                    int nc = col + num * deltaCols[i];
+
+                    if (!positionInBounds(n, nr, nc))
+                    {
+                        break;
+                    }
+
+                    if (board[nr][nc] == otherPlayer)
+                    {
+                        tempScoreDirection += positionWeight(n, row, col);
+                    }
+                    else if (board[nr][nc] == botPlayer)
+                    {
+                        tempScore += tempScoreDirection;
+                        break; // end of this direction
+                    }
+                    else
+                    {
+                        break; // empty
+                    }
+                }
+            }
+            if (score < tempScore)
+            {
+                score = tempScore;
+                best[0] = row;
+                best[1] = col;
+            }
+        }
+    }
+    if (best[0] != -1)
+    {
+        placeDot(board, n, best[0], best[1], botPlayer);
+        printf("Computer places %c at %c%c.\n", botPlayer, best[0] + 'a', best[1] + 'a');
+    }
+    else
+    {
+        printf("%c player has no valid move.\n", botPlayer);
+    }
+}
+
+int positionWeight(int n, int row, int col)
+{
+    /////CORE!!!!we need a combination of bools to determine the status of place.
+    bool isTopEdge = (row == 0);
+    bool isBottomEdge = (row == n - 1);
+    bool isLeftEdge = (col == 0);
+    bool isRightEdge = (col == n - 1);
+
+    // corners!
+    bool isCorner = (isTopEdge || isBottomEdge) && (isLeftEdge || isRightEdge);
+    if (isCorner)
+    {
+        return 100;
+    }
+
+    // x-squares
+    bool isXSquare = (row == 1 || row == n - 2) && (col == 1 || col == n - 2);
+    if (isXSquare)
+    {
+        return -20;
+    }
+
+    // c squares
+    bool isCSquare = ((isTopEdge || isBottomEdge) && (col == 1 || col == n - 2)) ||
+                     ((isLeftEdge || isRightEdge) && (row == 1 || row == n - 2));
+    if (isCSquare)
+    {
+        return -10;
+    }
+
+    // edge
+    if (isTopEdge || isBottomEdge || isLeftEdge || isRightEdge)
+    {
+        return 10;
+    }
+
+    // normal place
+    return 1;
 }

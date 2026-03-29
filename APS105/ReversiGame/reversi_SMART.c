@@ -1,7 +1,215 @@
+//
+// Note: ai is used in combining part1 and part2 code
+//
 #define N 26
 #define INF 999999
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include "liblab8part2.h"
+
+// Forward declarations for functions already in your minimax file
+bool positionInBounds(int n, int row, int col);
+bool checkLegalInDirection(const char board[][N], int n, int row, int col, char colour, int deltaRow, int deltaCol);
+bool isValid(const char board[][N], int n, int row, int col, char player);
+bool hasValidMove(const char board[][N], int n, char player);
+void copyBoard(const char src[][N], char dest[][N], int n);
+void placeDotSimulation(char board[][N], int n, int row, int col, char player);
+int makeMove(const char board[][26], int n, char turn, int *row, int *col);
+int minLevel(char board[][N], int n, char currentPlayer, char botPlayer, int depth, int alpha, int beta);
+int maxLevel(char board[][N], int n, char currentPlayer, char botPlayer, int depth, int alpha, int beta);
+
+// ---------- Helper functions matching the reference code ----------
+
+void boardInit(char board[][N], int n)
+{
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            board[i][j] = 'U';
+    int mid = n / 2;
+    board[mid - 1][mid - 1] = 'W';
+    board[mid - 1][mid] = 'B';
+    board[mid][mid - 1] = 'B';
+    board[mid][mid] = 'W';
+}
+
+void printBoard(char board[][N], int n)
+{
+    printf("  ");
+    for (int i = 0; i < n; i++)
+        printf("%c", 'a' + i);
+    printf("\n");
+    for (int i = 0; i < n; i++)
+    {
+        printf("%c ", 'a' + i);
+        for (int j = 0; j < n; j++)
+            printf("%c", board[i][j]);
+        printf("\n");
+    }
+}
+
+// Same as placeDotSimulation but used for the "real" board (identical logic)
+void placeDot(char board[][N], int n, int row, int col, char player)
+{
+    placeDotSimulation(board, n, row, col, player);
+}
+
+// Returns a dynamically allocated string of available moves (row-col pairs as chars)
+char *availableMove(char board[][N], int n, char player)
+{
+    char *p = calloc(2 * n * n + 1, sizeof(char));
+    int num = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            if (isValid(board, n, i, j, player))
+            {
+                p[num] = 'a' + i;
+                p[num + 1] = 'a' + j;
+                num += 2;
+            }
+    p[num] = '\0';
+    return p;
+}
+
+// ---------- Bot wrapper: calls makeMove then places the piece ----------
+
+void botMakeMove(char board[][N], int n, char botPlayer)
+{
+    int row = -1, col = -1;
+    makeMove(board, n, botPlayer, &row, &col);
+    if (row != -1 && col != -1)
+    {
+        placeDot(board, n, row, col, botPlayer);
+        printf("Computer places %c at %c%c.\n", botPlayer, row + 'a', col + 'a');
+    }
+    else
+    {
+        printf("%c player has no valid move.\n", botPlayer);
+    }
+}
+
+// ---------- Main ----------
+
+int main(void)
+{
+    int n = 0;
+    do
+    {
+        printf("Enter the board dimension: ");
+        scanf(" %3d", &n);
+    } while (n > 26 || n < 2);
+
+    char board[N][N];
+    boardInit(board, n);
+
+    char botPlay = '\0', userPlay = '\0';
+    printf("Computer plays (B/W): ");
+    do
+    {
+        scanf(" %c", &botPlay);
+    } while (botPlay != 'B' && botPlay != 'W');
+
+    printBoard(board, n);
+
+    // If bot is Black, it moves first
+    if (botPlay == 'B')
+    {
+        botMakeMove(board, n, botPlay);
+        printBoard(board, n);
+    }
+
+    userPlay = (botPlay == 'B') ? 'W' : 'B';
+    char userRow, userCol;
+
+    while (1)
+    {
+        // Check if either player can move
+        char *botMoves = availableMove(board, n, botPlay);
+        char *userMoves = availableMove(board, n, userPlay);
+
+        if (botMoves[0] == '\0' && userMoves[0] == '\0')
+        {
+            free(botMoves);
+            free(userMoves);
+            break;
+        }
+
+        // --- User's turn ---
+        if (userMoves[0] != '\0')
+        {
+            // printf("Enter move for colour %c (RowCol): ", userPlay);
+            int frow, fcol;
+            findSmartestMove(board, n, userPlay, &frow, &fcol);
+            printf("Testing AI move (row, col): %c%c\n", userRow + 'a', userCol + 'a');
+            userRow = frow + 'a';
+            userCol = fcol + 'a';
+            if (isValid(board, n, userRow - 'a', userCol - 'a', userPlay))
+            {
+                placeDot(board, n, userRow - 'a', userCol - 'a', userPlay);
+                printBoard(board, n);
+            }
+            else
+            {
+                printf("Invalid move.\n%c player wins.\n", botPlay);
+                free(botMoves);
+                free(userMoves);
+                return 0;
+            }
+        }
+        else
+        {
+            printf("%c player has no valid move.\n", userPlay);
+        }
+
+        // Recalculate available moves after user's turn
+        free(botMoves);
+        botMoves = availableMove(board, n, botPlay);
+
+        free(userMoves);
+        userMoves = availableMove(board, n, userPlay);
+
+        if (botMoves[0] == '\0' && userMoves[0] == '\0')
+        {
+            free(botMoves);
+            free(userMoves);
+            break;
+        }
+
+        // --- Bot's turn ---
+        if (botMoves[0] != '\0')
+        {
+            botMakeMove(board, n, botPlay);
+            printBoard(board, n);
+        }
+        else
+        {
+            printf("%c player has no valid move.\n", botPlay);
+        }
+
+        free(botMoves);
+        free(userMoves);
+    }
+
+    // --- Final score ---
+    int bCount = 0, wCount = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+        {
+            if (board[i][j] == 'B')
+                bCount++;
+            else if (board[i][j] == 'W')
+                wCount++;
+        }
+
+    if (bCount > wCount)
+        printf("B player wins.\n");
+    else if (wCount > bCount)
+        printf("W player wins.\n");
+    else
+        printf("Draw!\n");
+
+    return 0;
+}
 
 int minLevel(char board[][N], int n, char currentPlayer, char botPlayer, int depth, int alpha, int beta);
 
@@ -10,7 +218,7 @@ bool positionInBounds(int n, int row, int col)
     return (row >= 0 && row < n && col >= 0 && col < n);
 }
 
-bool checkLegalInDirection(char board[][N], int n, int row, int col, char colour, int deltaRow, int deltaCol)
+bool checkLegalInDirection(const char board[][N], int n, int row, int col, char colour, int deltaRow, int deltaCol)
 {
     char other = (colour == 'W') ? 'B' : 'W';
     bool foundOther = false;
@@ -44,7 +252,7 @@ bool checkLegalInDirection(char board[][N], int n, int row, int col, char colour
     return false;
 }
 
-bool isValid(char board[][N], int n, int row, int col, char player)
+bool isValid(const char board[][N], int n, int row, int col, char player)
 {
     int deltaRows[] = {0, 1, 1, 1, 0, -1, -1, -1}; // star from 0 rad, counterclockwise
     int deltaCols[] = {1, 1, 0, -1, -1, -1, 0, 1};
@@ -203,12 +411,12 @@ int evaluateBoard(const char board[][N], int n, char botPlayer)
             if (board[r][c] == botPlayer)
             {
                 myPieces++;
-                positionalScore += getPositionWeight(n, r, c);
+                positionalScore += getPositionWeight(n, r, c, board, botPlayer);
             }
             else if (board[r][c] == userPlayer)
             {
                 oppPieces++;
-                positionalScore -= getPositionWeight(n, r, c); // also need to minimise opponent
+                positionalScore -= getPositionWeight(n, r, c, board, botPlayer); // also need to minimise opponent
             }
             else
             {
@@ -258,6 +466,8 @@ int maxLevel(char board[][N], int n, char currentPlayer, char botPlayer, int dep
 {
     char nextPlayer = (currentPlayer == 'W') ? 'B' : 'W';
     int best = -INF;
+
+    // 最小更改：去掉了这里的 || !hasValidMove(...)，否则下面的跳过逻辑永远不会被执行
     if (depth == 0)
     {
         return evaluateBoard(board, n, botPlayer); // always from bot's perspective
@@ -298,10 +508,13 @@ int maxLevel(char board[][N], int n, char currentPlayer, char botPlayer, int dep
     }
     return best; // don't forget this!
 }
+
 int minLevel(char board[][N], int n, char currentPlayer, char botPlayer, int depth, int alpha, int beta)
 {
     char nextPlayer = (currentPlayer == 'W') ? 'B' : 'W';
     int worst = INF;
+
+    // 最小更改：同样去掉了这里的 || !hasValidMove(...)
     if (depth == 0)
     {
         return evaluateBoard(board, n, botPlayer); // always from bot's perspective
@@ -350,7 +563,7 @@ int makeMove(const char board[][26], int n, char turn, int *row, int *col)
     int bestCol = -1;
 
     // 8x8 boards can easily handle depth 5 or 6. Large boards need smaller depth.
-    int maxDepth = (n <= 8) ? 5 : 3;
+    int maxDepth = (n <= 8) ? 4 : 3;
 
     char opponent = (turn == 'W') ? 'B' : 'W';
 
