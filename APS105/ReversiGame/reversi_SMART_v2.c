@@ -12,7 +12,7 @@
 
 // time record
 static struct timeval searchStartTime;
-static double timeLimit = 0.94; // criteria seconds
+static double timeLimit = 0.92; // criteria seconds
 static bool searchEnd;          // set to true when time runs out
 
 // 获取距离 start 时间点过了多少秒的辅助函数
@@ -597,7 +597,7 @@ int makeMove(const char board[][26], int n, char current, int *row, int *col)
     int bestRow = -1;
     int bestCol = -1;
 
-    int maxDepth = 8;
+    int maxDepth = n * n;
 
     char opponent = (current == 'W') ? 'B' : 'W';
 
@@ -646,11 +646,11 @@ int makeMove(const char board[][26], int n, char current, int *row, int *col)
         }
         else
         {
-            // this depth was incomplete — discard this results, keep previous
+            // this depth was incomplete —> discard this results, keep previous
             break;
         }
-        // If we're already near the time limit, don't start a deeper search
-        if (getTimeElapsed(searchStartTime) >= timeLimit * 0.5)
+        // If already near the time limit (500ms), don't start a deeper search
+        if (getTimeElapsed(searchStartTime) >= timeLimit * 0.65)
             break;
     }
     if (bestRow != -1 && bestCol != -1)
