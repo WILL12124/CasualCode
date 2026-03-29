@@ -6,7 +6,22 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
+#include <stddef.h>
 #include "liblab8part2.h"
+
+// time record
+static struct timeval searchStartTime;
+static double timeLimit = 0.94; // criteria seconds
+static bool searchEnd;          // set to true when time runs out
+
+// 获取距离 start 时间点过了多少秒的辅助函数
+double getTimeElapsed(struct timeval start)
+{
+    struct timeval current; // not a new data type, included in lib
+    gettimeofday(&current, NULL);
+    return (current.tv_sec - start.tv_sec) + (current.tv_usec - start.tv_usec) / 1000000.0;
+}
 
 // Forward declarations for functions already in your minimax file
 bool positionInBounds(int n, int row, int col);
@@ -460,11 +475,19 @@ int evaluateBoard(const char board[][N], int n, char botPlayer)
 
 int maxLevel(char board[][N], int n, char currentPlayer, char botPlayer, int depth, int alpha, int beta)
 {
+    //
+    // TIME CHECK
+    //
+    if (getTimeElapsed(searchStartTime) >= timeLimit)
+    {
+        searchEnd = true;
+        return evaluateBoard(board, n, botPlayer);
+    }
 
     char nextPlayer = (currentPlayer == 'W') ? 'B' : 'W';
     int best = -INF;
 
-    // 最小更改：去掉了这里的 || !hasValidMove(...)，否则下面的跳过逻辑永远不会被执行
+    // base case
     if (depth == 0)
     {
         return evaluateBoard(board, n, botPlayer); // always from bot's perspective
@@ -495,6 +518,8 @@ int maxLevel(char board[][N], int n, char currentPlayer, char botPlayer, int dep
             copyBoard(board, nextBoard, n); // correct argument order
             placeDotSimulation(nextBoard, n, i, j, currentPlayer);
             int score = minLevel(nextBoard, n, nextPlayer, botPlayer, depth - 1, alpha, beta);
+            if (searchEnd)
+                return best;
             if (score > best)
                 best = score;
             if (best > alpha)
@@ -508,6 +533,15 @@ int maxLevel(char board[][N], int n, char currentPlayer, char botPlayer, int dep
 
 int minLevel(char board[][N], int n, char currentPlayer, char botPlayer, int depth, int alpha, int beta)
 {
+    //
+    // TIME CHECK
+    //
+    if (getTimeElapsed(searchStartTime) >= timeLimit)
+    {
+        searchEnd = true;
+        return evaluateBoard(board, n, botPlayer);
+    }
+
     char nextPlayer = (currentPlayer == 'W') ? 'B' : 'W';
     int worst = INF;
 
@@ -542,6 +576,8 @@ int minLevel(char board[][N], int n, char currentPlayer, char botPlayer, int dep
             copyBoard(board, nextBoard, n); // correct argument order
             placeDotSimulation(nextBoard, n, i, j, currentPlayer);
             int score = maxLevel(nextBoard, n, nextPlayer, botPlayer, depth - 1, alpha, beta);
+            if (searchEnd)
+                return worst;
             if (score < worst)
                 worst = score;
             if (worst < beta)
@@ -553,38 +589,69 @@ int minLevel(char board[][N], int n, char currentPlayer, char botPlayer, int dep
     return worst; // return after full search
 }
 
-int makeMove(const char board[][26], int n, char turn, int *row, int *col)
+int makeMove(const char board[][26], int n, char current, int *row, int *col)
 {
+    gettimeofday(&searchStartTime, NULL);
+    searchEnd = false; // global var, set to false!
     int bestScore = -INF;
     int bestRow = -1;
     int bestCol = -1;
 
-    // 8x8 boards can easily handle depth 5 or 6. Large boards need smaller depth.
-    int maxDepth = (n <= 8) ? 5 : 3;
+    int maxDepth = 8;
 
-    char opponent = (turn == 'W') ? 'B' : 'W';
+    char opponent = (current == 'W') ? 'B' : 'W';
 
-    for (int r = 0; r < n; r++)
+    for (int depth = 1; depth <= maxDepth; depth++) // depth start at 1
     {
-        for (int c = 0; c < n; c++)
+        int currentBestRow = -1, currentBestCol = -1;
+        int currentBestScore = -INF;
+        searchEnd = false;
+        for (int r = 0; r < n; r++)
         {
-            if (isValid(board, n, r, c, turn))
+            for (int c = 0; c < n; c++)
             {
-                char nextBoard[N][N];
-                copyBoard(board, nextBoard, n);
-                placeDotSimulation(nextBoard, n, r, c, turn);
-
-                // Opponent moves next, minimize bot's score
-                int moveScore = minLevel(nextBoard, n, opponent, turn,
-                                         maxDepth - 1, -INF, INF);
-                if (moveScore > bestScore)
+                // Root Node (need to remember coordinates)
+                if (isValid(board, n, r, c, current))
                 {
-                    bestScore = moveScore;
-                    bestRow = r;
-                    bestCol = c;
+                    char nextBoard[N][N];
+                    copyBoard(board, nextBoard, n);
+                    placeDotSimulation(nextBoard, n, r, c, current);
+
+                    // Opponent moves next, minimize bot's score
+                    int moveScore = minLevel(nextBoard, n, opponent, current,
+                                             depth - 1, -INF, INF);
+                    if (moveScore > currentBestScore)
+                    {
+                        currentBestScore = moveScore;
+                        currentBestRow = r;
+                        currentBestCol = c;
+                    }
+                }
+                if (searchEnd)
+                {
+                    break;
                 }
             }
+            if (searchEnd)
+            {
+                break;
+            }
         }
+        if (!searchEnd)
+        {
+            // This depth completed fully, save the result
+            bestScore = currentBestScore;
+            bestRow = currentBestRow;
+            bestCol = currentBestCol;
+        }
+        else
+        {
+            // this depth was incomplete — discard this results, keep previous
+            break;
+        }
+        // If we're already near the time limit, don't start a deeper search
+        if (getTimeElapsed(searchStartTime) >= timeLimit * 0.5)
+            break;
     }
     if (bestRow != -1 && bestCol != -1)
     {
