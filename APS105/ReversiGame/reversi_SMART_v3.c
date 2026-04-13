@@ -8,7 +8,7 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <stddef.h>
-#include "liblab8part2.h"
+//#include "liblab8part2.h"
 
 // time record
 static struct timeval searchStartTime;
