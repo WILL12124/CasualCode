@@ -140,7 +140,7 @@ bool DeleteVal(list *plist, int val)
 
     node *cur = plist->head;
     node *past = NULL;
-    while (cur->next != NULL && cur->next->number != val) ////!!!!IF LAST ONE ISN'T DON'T DELETE
+    while (cur != NULL && cur->number != val) ////!!!!IF LAST ONE ISN'T DON'T DELETE
     {
         past = cur;
         cur = cur->next;
